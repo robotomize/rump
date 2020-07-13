@@ -35,16 +35,5 @@ func (r *Srv) RcvPosition(ctx context.Context, req *pb.RcvPositionRequest) (*pb.
 }
 
 func (r *Srv) SyncPosition(ctx context.Context, req *pb.SyncPositionRequest) (*pb.SyncPositionResponse, error) {
-	//player, err := r.state.SyncPosition(req.ID)
-	//if err != nil {
-	//	return nil, err
-	//}
-	//return &pb.SyncPositionResponse{
-	//	ID: player.ID,
-	//	Pos: &pb.Vector3{
-	//		X: player.Pos.X,
-	//		Y: player.Pos.Y,
-	//		Z: player.Pos.Z,
-	//	},
-	//}, nil
+	return (*pb.SyncPositionResponse)(nil), nil
 }
