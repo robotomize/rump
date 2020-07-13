@@ -32,3 +32,14 @@ make build
 ```sh
 make test
 ```
+### Использование
+Запускаем сервер
+Утилита syncposcli отправляет позицию игрока в сервис
+```sh 
+syncposcli --id 1 --x 10 --y 11 --z 20
+syncposcli --id 1 --x 10 --y 11 --z 15
+```
+Утилита rcvposcli забирает позицию
+```sh 
+rcvposcli --id 1
+```

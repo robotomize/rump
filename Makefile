@@ -20,6 +20,7 @@ build: clean
 	CGO_ENABLED=0 GOOS=${GOOS} go build ./tools/rcvposcli \
 		-ldflags "-X main.version=${RELEASE}  -X main.buildTime=${BUILD_TIME} -X main.name=${NAME}" \
 		-o build/${APP}
+
 	CGO_ENABLED=0 GOOS=${GOOS} go build ./tools/syncposcli \
 		-ldflags "-X main.version=${RELEASE}  -X main.buildTime=${BUILD_TIME} -X main.name=${NAME}" \
 		-o build/${APP}
