@@ -17,6 +17,7 @@ message Vector3 {
 
 message SyncPositionRequest {
     uint32 ID = 1;
+    Vector3 pos = 2;
 }
 
 message SyncPositionResponse {

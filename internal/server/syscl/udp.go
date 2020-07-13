@@ -7,6 +7,8 @@ import (
 	"rump/internal/server"
 	"rump/internal/srvenv"
 	"rump/internal/utils"
+	"runtime"
+	"sync"
 	"syscall"
 )
 
@@ -43,6 +45,12 @@ func (s *Server) ServeUDP(ctx context.Context, fn ...server.HandleFn) error {
 		logger.Debugf("server: завершение по контексту UDP")
 		_ = syscall.Close(serverFd)
 	}()
+
+	rateCh := make(chan struct{}, runtime.NumCPU())
+	defer close(rateCh)
+
+	var wg sync.WaitGroup
+
 	buf := make([]byte, 1500)
 	go func() {
 		defer func() {
@@ -62,12 +70,11 @@ func (s *Server) ServeUDP(ctx context.Context, fn ...server.HandleFn) error {
 				return
 			}
 			for _, handleFn := range fn {
-				if err := handleFn(buf[:n]); err != nil {
-					select {
-					case errCh <- err:
-					default:
-					}
-				}
+				func() {
+					b := make([]byte, len(buf[:n]))
+					copy(b, buf[:n])
+					worker(&wg, logger, b, handleFn, errCh, rateCh)
+				}()
 			}
 		}
 	}()
@@ -75,4 +82,28 @@ func (s *Server) ServeUDP(ctx context.Context, fn ...server.HandleFn) error {
 	case err := <-errCh:
 		return fmt.Errorf("ошибка graceful shutdown UDP: %w", err)
 	}
+}
+
+func worker(wg *sync.WaitGroup, logger logging.Logger, bytes []byte, fn server.HandleFn, errCh chan<- error, rateCh chan struct{}) {
+	defer func() {
+		if err := recover(); err != nil {
+			const size = 64 << 10
+			buf := make([]byte, size)
+			buf = buf[:runtime.Stack(buf, false)]
+			logger.Error(err)
+		}
+	}()
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		rateCh <- struct{}{}
+		if err := fn(bytes); err != nil {
+			select {
+			case errCh <- err:
+				logger.Error(err)
+			default:
+			}
+		}
+		<-rateCh
+	}()
 }
