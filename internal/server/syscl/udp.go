@@ -16,11 +16,11 @@ type Server struct {
 }
 
 func New(config *srvenv.SrvEnv) (*Server, error) {
-	addr, err := utils.ParseAddr(config.SrvConfig.Addr)
+	addr, err := utils.ParseAddr(config.SrvConfig.SyncAddr)
 	if err != nil {
 		return nil, err
 	}
-	return &Server{sockAddr: addr}, nil
+	return &Server{sockAddr: addr, env: config}, nil
 }
 
 func (s *Server) ServeUDP(ctx context.Context, fn ...server.HandleFn) error {
@@ -37,7 +37,7 @@ func (s *Server) ServeUDP(ctx context.Context, fn ...server.HandleFn) error {
 		logger.Error(err)
 	}
 
-	fmt.Println("server: сервер запущен ", s.sockAddr)
+	fmt.Println("server: сервер запущен на", s.env.SrvConfig.SyncAddr)
 	go func() {
 		<-ctx.Done()
 		logger.Debugf("server: завершение по контексту UDP")

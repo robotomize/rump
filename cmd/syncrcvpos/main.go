@@ -36,7 +36,6 @@ func main() {
 	wg.Add(2)
 	go func() {
 		defer wg.Done()
-
 		if err := runGRPCun(ctx, pbGameState); err != nil {
 			errCh <- err
 		}
@@ -61,8 +60,6 @@ func runGRPCun(ctx context.Context, pbSrv *gamestatepb.Srv) error {
 		logger.Error(err)
 		return fmt.Errorf("server: %w", err)
 	}
-	config.Kind = server.KindTCP
-	config.Addr = ":5577"
 	srv, err := std.New(env)
 	if err != nil {
 		logger.Error(err)
@@ -71,7 +68,7 @@ func runGRPCun(ctx context.Context, pbSrv *gamestatepb.Srv) error {
 	grpcServer := grpc.NewServer()
 	pb.RegisterSyncStateServer(grpcServer, pbSrv)
 
-	logger.Infof("запущен на порту :%s", env.SrvConfig.Addr)
+	logger.Infof("запущен на порту :%s", env.SrvConfig.RcvAddr)
 	return srv.ServeGRPC(ctx, grpcServer)
 }
 
