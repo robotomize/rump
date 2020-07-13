@@ -1,0 +1,34 @@
+syntax = "proto3";
+
+package pb;
+
+service SyncState {
+    rpc RcvPosition (RcvPositionRequest) returns (RcvPositionResponse) {
+    }
+    rpc SyncPosition (SyncPositionRequest) returns (SyncPositionResponse) {
+    }
+}
+
+message Vector3 {
+    double x = 1;
+    double y = 2;
+    double z = 3;
+}
+
+message SyncPositionRequest {
+    uint32 ID = 1;
+}
+
+message SyncPositionResponse {
+    uint32 ID = 1;
+    Vector3 pos = 2;
+}
+
+message RcvPositionRequest {
+    uint32 ID = 1;
+}
+
+message RcvPositionResponse {
+    uint32 ID = 1;
+    Vector3 pos = 2;
+}
