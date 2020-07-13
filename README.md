@@ -2,6 +2,12 @@
 
 Микросервис обновления игрового состояния и получения актуальных данных по игроку
 
+### Docker
+
+```sh
+sudo docker build -t rump .
+```
+
 ### Ручной вариант сборки
 ```sh
   git clone https://github.com/robotomize/rump.git
