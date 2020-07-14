@@ -1,7 +1,10 @@
 package srvenv
 
-import "rump/internal/server"
+type ServerConfig interface {
+	GetUDPAddr() string
+	GetGRPCAddr() string
+}
 
 type SrvEnv struct {
-	SrvConfig *server.Config
+	SrvConfig ServerConfig
 }

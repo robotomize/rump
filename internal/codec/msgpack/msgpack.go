@@ -2,7 +2,6 @@ package msgpack
 
 import (
 	"github.com/ugorji/go/codec"
-	"io"
 	"sync"
 )
 
@@ -18,8 +17,6 @@ func New() *MsgPack {
 
 type MsgPack struct {
 	mu     sync.RWMutex
-	r      io.Reader
-	w      io.Writer
 	encBuf []byte
 	decBuf []byte
 	enc    *codec.Encoder

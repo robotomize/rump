@@ -3,16 +3,35 @@ package gamestate
 import (
 	"context"
 	"fmt"
+	"github.com/golang/protobuf/proto"
 	"github.com/valyala/fastrand"
 	"rump/internal/codec"
 	"rump/internal/logging"
+	"rump/internal/pb"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
 var (
 	ErrPlayerNotFound = fmt.Errorf("игрок не найден в контексте сервиса")
 )
+
+var syncPbPlayerPool = sync.Pool{
+	New: func() interface{} { return &pb.SyncPos{} },
+}
+
+func GetSyncPoll() (p *pb.SyncPos) {
+	ifc := syncPbPlayerPool.Get()
+	if ifc != nil {
+		p = ifc.(*pb.SyncPos)
+	}
+	return
+}
+
+func PutSyncPoll(p *pb.SyncPos) {
+	syncPbPlayerPool.Put(p)
+}
 
 type Vector struct {
 	X, Y, Z float64
@@ -91,9 +110,7 @@ type State struct {
 	logger  logging.Logger
 }
 
-type StateHandlerFn func(ctx context.Context, ID uint32) (*Player, error)
-
-func (r *State) RcvPosition(ID uint32) (*Player, error) {
+func (r *State) RcvPlayer(ID uint32) (*Player, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	if player, ok := r.players[ID]; ok {
@@ -110,16 +127,92 @@ func (r *State) RcvPosition(ID uint32) (*Player, error) {
 	return nil, ErrPlayerNotFound
 }
 
-func (r *State) SyncPosition(bytes []byte) error {
+func (r *State) SyncPlayer(player *Player) {
 	r.mu.Lock()
-	defer r.mu.Unlock()
-	var p *Player
-	if err := r.codec.Decode(bytes, &p); err != nil {
+	r.players[player.ID] = player
+	r.mu.Unlock()
+}
+
+type GRPCHandler struct {
+	pb.UnimplementedSyncStateServer
+
+	logger logging.Logger
+	state  *State
+}
+
+func NewGRPCHandler(logger logging.Logger, state *State) *GRPCHandler {
+	return &GRPCHandler{
+		UnimplementedSyncStateServer: pb.UnimplementedSyncStateServer{},
+		logger:                       logger,
+		state:                        state,
+	}
+}
+
+func (r *GRPCHandler) RcvPlayer(ctx context.Context, req *pb.RcvPlayerRequest) (*pb.RcvPlayerResponse, error) {
+	player, err := r.state.RcvPlayer(req.ID)
+	if err != nil {
+		return nil, err
+	}
+	return &pb.RcvPlayerResponse{
+		ID: player.ID,
+		Pos: &pb.Vector3{
+			X: player.Pos.X,
+			Y: player.Pos.Y,
+			Z: player.Pos.Z,
+		},
+	}, nil
+}
+
+var cnt uint32
+
+func (r *GRPCHandler) SyncPlayer(ctx context.Context, req *pb.SyncPlayerRequest) (*pb.SyncPlayerResponse, error) {
+	player := NewPlayer(req.ID, Vector{X: req.Pos.X, Y: req.Pos.Y, Z: req.Pos.Z})
+	player.TimeStamp = time.Unix(0, req.Timestamp)
+	r.state.SyncPlayer(player)
+	if atomic.LoadUint32(&cnt) == 25*1000 {
+		fmt.Println(time.Since(player.TimeStamp))
+		atomic.StoreUint32(&cnt, 0)
+	}
+	atomic.AddUint32(&cnt, 1)
+	return &pb.SyncPlayerResponse{ID: player.ID}, nil
+}
+
+type UDPHandler struct {
+	logger logging.Logger
+	state  *State
+	codec.Codec
+}
+
+func NewUDPHandler(logger logging.Logger, state *State) *UDPHandler {
+	return &UDPHandler{
+		logger: logger,
+		state:  state,
+	}
+}
+
+func (r *UDPHandler) SyncPlayerCodec(cnt uint32, payload []byte) error {
+	player := Player{}
+	if err := r.Codec.Decode(payload, &player); err != nil {
 		return err
 	}
-	r.players[p.ID] = p
-	fmt.Printf(
-		"синхронизован игрок %d с координатами %f, %f, %f, latency %q",
-		p.ID, p.Pos.X, p.Pos.Y, p.Pos.Z, time.Since(p.TimeStamp))
+	r.state.SyncPlayer(&player)
+	if atomic.LoadUint32(&cnt) == 25*1000 {
+		fmt.Println(time.Since(player.TimeStamp))
+	}
+	return nil
+}
+
+func (r *UDPHandler) SyncPlayerProtobuf(cnt uint32, payload []byte) error {
+	in := GetSyncPoll()
+	if err := proto.Unmarshal(payload, in); err != nil {
+		return err
+	}
+	PutSyncPoll(in)
+	player := NewPlayer(in.ID, Vector{X: in.Pos.X, Y: in.Pos.Y, Z: in.Pos.Z})
+	player.TimeStamp = time.Unix(0, in.Timestamp)
+	r.state.SyncPlayer(player)
+	if atomic.LoadUint32(&cnt) == 25*1000 {
+		fmt.Println(time.Since(player.TimeStamp))
+	}
 	return nil
 }

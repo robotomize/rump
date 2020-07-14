@@ -3,9 +3,9 @@ syntax = "proto3";
 package pb;
 
 service SyncState {
-    rpc RcvPosition (RcvPositionRequest) returns (RcvPositionResponse) {
+    rpc RcvPlayer (RcvPlayerRequest) returns (RcvPlayerResponse) {
     }
-    rpc SyncPosition (SyncPositionRequest) returns (SyncPositionResponse) {
+    rpc SyncPlayer (SyncPlayerRequest) returns (SyncPlayerResponse) {
     }
 }
 
@@ -15,21 +15,27 @@ message Vector3 {
     double z = 3;
 }
 
-message SyncPositionRequest {
+message SyncPos {
     uint32 ID = 1;
     Vector3 pos = 2;
+    int64 Timestamp = 3;
 }
 
-message SyncPositionResponse {
+message SyncPlayerRequest {
     uint32 ID = 1;
     Vector3 pos = 2;
+    int64 Timestamp = 3;
 }
 
-message RcvPositionRequest {
+message SyncPlayerResponse {
     uint32 ID = 1;
 }
 
-message RcvPositionResponse {
+message RcvPlayerRequest {
+    uint32 ID = 1;
+}
+
+message RcvPlayerResponse {
     uint32 ID = 1;
     Vector3 pos = 2;
 }

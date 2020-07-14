@@ -46,15 +46,10 @@ func TestGenerateVector(t *testing.T) {
 }
 
 func TestSyncPos(t *testing.T) {
-	pack := msgpack.New()
 	player := GeneratePlayer()
-	bytes, err := pack.Encode(player)
 	convey.Convey("Проверяем общие механики отправки игрока(позиции)", t, func() {
 		state := NewState(context.TODO(), msgpack.New())
-		err = state.SyncPosition(bytes)
-		convey.Convey("Проверяем, что при отправке позиции нам не прилетела ошибка", func() {
-			convey.So(err, convey.ShouldEqual, nil)
-		})
+		state.SyncPlayer(player)
 	})
 }
 
@@ -73,14 +68,14 @@ func TestRcvPos(t *testing.T) {
 		bytes, err := pack.Encode(player)
 		state := NewState(context.TODO(), msgpack.New())
 
-		fromDbPlayer, err = state.RcvPosition(player.ID)
+		fromDbPlayer, err = state.RcvPlayer(player.ID)
 		convey.Convey("Проверяем, что при юзера нет в записях сервиса", func() {
 			convey.So(err, convey.ShouldEqual, ErrPlayerNotFound)
 		})
 		_ = bytes
-		err = state.SyncPosition(bytes)
+		state.SyncPlayer(player)
 		err = pack.Decode(bytes, &decodedPlayer)
-		fromDbPlayer, err = state.RcvPosition(player.ID)
+		fromDbPlayer, err = state.RcvPlayer(player.ID)
 		convey.Convey("Проверяем, что при получении позиции у нас нет ошибки", func() {
 			convey.So(err, convey.ShouldEqual, nil)
 		})

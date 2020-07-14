@@ -2,16 +2,15 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"google.golang.org/grpc"
+	"net/http"
+	_ "net/http/pprof"
 	"rump/internal/codec/msgpack"
 	"rump/internal/gamestate"
 	"rump/internal/logging"
 	"rump/internal/pb"
-	"rump/internal/pb/gamestatepb"
 	"rump/internal/server"
-	"rump/internal/server/std"
-	"rump/internal/server/syscl"
+	"rump/internal/server/gnet"
 	"rump/internal/setup"
 	"rump/internal/shutdown"
 	"sync"
@@ -20,71 +19,67 @@ import (
 func main() {
 	ctx, cancel := shutdown.New()
 	defer cancel()
-
+	logger := logging.FromContext(ctx)
 	errCh := make(chan error, 1)
+
 	go func() {
 		logger := logging.FromContext(ctx)
 		for err := range errCh {
 			logger.Error(err)
 		}
 	}()
+
+	var config server.Config
+
+	env, err := setup.Setup(ctx, &config)
+	if err != nil {
+		errCh <- err
+	}
+	srv, err := server.New(env)
+	if err != nil {
+		logger.Fatal("server: %w", err)
+	}
 	state := gamestate.NewState(ctx, msgpack.New())
-	pbGameState := gamestatepb.New(state)
+
 	defer close(errCh)
 	var wg sync.WaitGroup
 
-	wg.Add(2)
+	wg.Add(3)
+
 	go func() {
 		defer wg.Done()
-		if err := runGRPCun(ctx, pbGameState); err != nil {
+		if err := serveGRPC(ctx, logger, srv, state); err != nil {
 			errCh <- err
 		}
 	}()
+
 	go func() {
 		defer wg.Done()
-		if err := runUDP(ctx, state); err != nil {
+		listener, err := gnet.New(env)
+		if err != nil {
+			errCh <- err
+		}
+		udp := server.NewUDPServer(listener, gamestate.NewUDPHandler(logger, state).SyncPlayerProtobuf)
+		if err := serveUDP(ctx, srv, udp); err != nil {
 			errCh <- err
 		}
 	}()
+
+	go func() {
+		if err := http.ListenAndServe("0.0.0.0:8181", nil); err != nil {
+			errCh <- err
+		}
+	}()
+
 	wg.Wait()
 }
 
-func runGRPCun(ctx context.Context, pbSrv *gamestatepb.Srv) error {
-	ctx, _ = shutdown.New()
-	logger := logging.FromContext(ctx)
-	var (
-		config server.Config
-	)
-	env, err := setup.Setup(ctx, &config)
-	if err != nil {
-		logger.Error(err)
-		return fmt.Errorf("server: %w", err)
-	}
-	srv, err := std.New(env)
-	if err != nil {
-		logger.Error(err)
-		return fmt.Errorf("server: %w", err)
-	}
+func serveGRPC(ctx context.Context, logger logging.Logger, srv *server.Server, state *gamestate.State) error {
 	grpcServer := grpc.NewServer()
-	pb.RegisterSyncStateServer(grpcServer, pbSrv)
-
-	logger.Infof("запущен на порту :%s", env.SrvConfig.RcvAddr)
+	pb.RegisterSyncStateServer(grpcServer, gamestate.NewGRPCHandler(logger, state))
 	return srv.ServeGRPC(ctx, grpcServer)
 }
 
-func runUDP(ctx context.Context, state *gamestate.State) error {
-	ctx, _ = shutdown.New()
-	logger := logging.FromContext(ctx)
-	var config server.Config
-	env, err := setup.Setup(ctx, &config)
-	if err != nil {
-		logger.Error(err)
-		return fmt.Errorf("server: %w", err)
-	}
-	srv, err := syscl.New(env)
-	if err != nil {
-		logger.Error(err)
-		return fmt.Errorf("server: %w", err)
-	}
-	return srv.ServeUDP(ctx, state.SyncPosition)
+func serveUDP(ctx context.Context, srv *server.Server, udp *server.UDPServer) error {
+	return srv.ServeUDP(ctx, udp)
 }

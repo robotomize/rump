@@ -4,8 +4,11 @@ go 1.14
 
 require (
 	github.com/golang/protobuf v1.4.2
+	github.com/kavu/go_reuseport v1.5.0 // indirect
+	github.com/panjf2000/gnet v1.2.7
 	github.com/sethvargo/go-envconfig v0.2.0
 	github.com/smartystreets/goconvey v1.6.4
+	github.com/tidwall/evio v1.0.7
 	github.com/ugorji/go v1.1.7 // indirect
 	github.com/ugorji/go/codec v1.1.7
 	github.com/valyala/fastrand v1.0.0

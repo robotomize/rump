@@ -25,7 +25,7 @@ RUN upx -q -9 /bin/service
 FROM scratch
 COPY --from=builder /bin/service /bin/service
 
-ENV SYNC_ADDR :5555
-ENV RCV_ADDR :5577
+ENV UDP_ADDR :5555
+ENV GRPC_ADDR :5577
 
 ENTRYPOINT ["/bin/service"]
