@@ -39,18 +39,9 @@ type srv struct {
 var cc uint32
 
 func (es *srv) React(in []byte, c gnet.Conn) (out []byte, action gnet.Action) {
-	//fmt.Println(in)
 	for _, f := range es.fn {
 		f := f
 		func() {
-			//defer func() {
-			//	if err := recover(); err != nil {
-			//		const size = 64 << 10
-			//		buf := make([]byte, size)
-			//		buf = buf[:runtime.Stack(buf, false)]
-			//		es.logger.Error(err)
-			//	}
-			//}()
 			if err := f(es.cnt, in); err != nil {
 				es.logger.Error(err)
 			}

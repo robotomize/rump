@@ -35,9 +35,7 @@ func main() {
 		log.Fatalf("could not get answer: %v", err)
 	}
 	var cnt uint32
-	//t := time.Now()
 	cd := msgpack.New()
-
 	for j := 0; j < 1000; j++ {
 		for cnt <= 25 {
 			for i := 0; i <= 1000; i++ {
@@ -45,11 +43,9 @@ func main() {
 			}
 			atomic.AddUint32(&cnt, 1)
 			time.Sleep(40 * time.Millisecond)
-			//fmt.Println(atomic.LoadUint32(&cnt))
 		}
 		cnt = 0
 	}
-	//fmt.Println(t.UnixNano())
 }
 
 type emitter func(logging.Logger, *client.UDPClient)
@@ -67,29 +63,10 @@ func emitFn(codec codec.Codec, client pb.SyncStateClient, logger logging.Logger,
 		},
 		Timestamp: time.Now().UnixNano(),
 	}
-	//in := &pb.SyncPlayerRequest{
-	//	ID: player.ID,
-	//	Pos: &pb.Vector3{
-	//		X: player.Pos.X,
-	//		Y: player.Pos.Y,
-	//		Z: player.Pos.Z,
-	//	},
-	//	Timestamp: time.Now().UnixNano(),
-	//}
-	//_, err := client.SyncPlayer(context.Background(), in)
-	//if err != nil {
-	//	logger.Error(err)
-	//}
 	bytes, err := proto.Marshal(in)
 	if err != nil {
 		logger.Fatal(err)
 	}
-
-	//bytes, err := codec.Encode(player)
-	//if err != nil {
-	//	logger.Fatal(err)
-	//}
-	//_ = bytes
 	if err := c.Write(bytes); err != nil {
 		logger.Fatal("ошибка записи в сокет", err)
 	}
