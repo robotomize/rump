@@ -65,23 +65,11 @@ func (s *Listener) Listen(ctx context.Context, fn ...server.UDPHandler) error {
 			for _, f := range fn {
 				f := f
 				go func() {
-					defer func() {
-						if err := recover(); err != nil {
-							const size = 64 << 10
-							buf := make([]byte, size)
-							buf = buf[:runtime.Stack(buf, false)]
-							logger.Error(err)
-						}
-					}()
 					b := make([]byte, len(buf[:n]))
 					copy(b, buf[:n])
 
 					if err := f(cnt, b); err != nil {
-						select {
-						case errCh <- err:
-							logger.Error(err)
-						default:
-						}
+						errCh <- err
 					}
 					if atomic.LoadUint32(&cnt) == 25*10000 {
 						atomic.StoreUint32(&cnt, 0)
@@ -92,6 +80,8 @@ func (s *Listener) Listen(ctx context.Context, fn ...server.UDPHandler) error {
 		}
 	}()
 	select {
+	case <-ctx.Done():
+		return nil
 	case err := <-errCh:
 		return fmt.Errorf("ошибка graceful shutdown UDP: %w", err)
 	}

@@ -2,12 +2,14 @@ package gamestate
 
 import (
 	"context"
+	"encoding/binary"
 	"fmt"
 	"github.com/golang/protobuf/proto"
 	"github.com/valyala/fastrand"
 	"rump/internal/codec"
 	"rump/internal/logging"
 	"rump/internal/pb"
+	"rump/internal/utils"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -17,11 +19,23 @@ var (
 	ErrPlayerNotFound = fmt.Errorf("игрок не найден в контексте сервиса")
 )
 
+var playerPool = sync.Pool{
+	New: func() interface{} { return &Player{} },
+}
+
+func GetPlayerPool() (p *Player) {
+	ifc := playerPool.Get()
+	if ifc != nil {
+		p = ifc.(*Player)
+	}
+	return
+}
+
 var syncPbPlayerPool = sync.Pool{
 	New: func() interface{} { return &pb.SyncPos{} },
 }
 
-func GetSyncPoll() (p *pb.SyncPos) {
+func GetSyncPbPool() (p *pb.SyncPos) {
 	ifc := syncPbPlayerPool.Get()
 	if ifc != nil {
 		p = ifc.(*pb.SyncPos)
@@ -29,8 +43,12 @@ func GetSyncPoll() (p *pb.SyncPos) {
 	return
 }
 
-func PutSyncPoll(p *pb.SyncPos) {
+func PutSyncPbPool(p *pb.SyncPos) {
 	syncPbPlayerPool.Put(p)
+}
+
+func PutPlayerPool(p *Player) {
+	playerPool.Put(p)
 }
 
 type Vector struct {
@@ -57,7 +75,7 @@ func GenerateVector() Vector {
 type Player struct {
 	ID        uint32
 	Pos       Vector
-	TimeStamp time.Time
+	TimeStamp int64
 }
 
 func GeneratePlayer() *Player {
@@ -74,36 +92,20 @@ func NewPlayer(ID uint32, pos Vector) *Player {
 	}
 }
 
-type Option func(*State)
-
-type Options struct {
-	debug bool
-}
-
-func NewDebug() Option {
-	return func(state *State) {
-		state.opts.debug = true
-	}
-}
-
 type Players map[uint32]*Player
 
-func NewState(ctx context.Context, codec codec.Codec, opts ...Option) *State {
+func NewState(ctx context.Context, cd codec.Codec) *State {
 	r := &State{
 		mu:      sync.RWMutex{},
-		codec:   codec,
 		players: Players{},
 		logger:  logging.FromContext(ctx),
-	}
-	for _, f := range opts {
-		f(r)
+		codec:   cd,
 	}
 	return r
 }
 
 type State struct {
 	mu      sync.RWMutex
-	opts    Options
 	ctx     context.Context
 	codec   codec.Codec
 	players Players
@@ -167,10 +169,9 @@ var cnt uint32
 
 func (r *GRPCHandler) SyncPlayer(ctx context.Context, req *pb.SyncPlayerRequest) (*pb.SyncPlayerResponse, error) {
 	player := NewPlayer(req.ID, Vector{X: req.Pos.X, Y: req.Pos.Y, Z: req.Pos.Z})
-	player.TimeStamp = time.Unix(0, req.Timestamp)
 	r.state.SyncPlayer(player)
 	if atomic.LoadUint32(&cnt) == 25*1000 {
-		fmt.Println(time.Since(player.TimeStamp))
+		r.logger.Debugf("%s", time.Now().UnixNano()-player.TimeStamp)
 		atomic.StoreUint32(&cnt, 0)
 	}
 	atomic.AddUint32(&cnt, 1)
@@ -180,7 +181,6 @@ func (r *GRPCHandler) SyncPlayer(ctx context.Context, req *pb.SyncPlayerRequest)
 type UDPHandler struct {
 	logger logging.Logger
 	state  *State
-	codec.Codec
 }
 
 func NewUDPHandler(logger logging.Logger, state *State) *UDPHandler {
@@ -190,29 +190,56 @@ func NewUDPHandler(logger logging.Logger, state *State) *UDPHandler {
 	}
 }
 
-func (r *UDPHandler) SyncPlayerCodec(cnt uint32, payload []byte) error {
-	player := Player{}
-	if err := r.Codec.Decode(payload, &player); err != nil {
+func (r *UDPHandler) SyncPlayerBinary(cnt uint32, payload []byte) error {
+	if r.state.codec == nil {
+		return fmt.Errorf("кодек для декодирования данных не передан")
+	}
+	player := GetPlayerPool()
+	defer PutPlayerPool(player)
+
+	b := utils.GetBuffer()
+	b.Write(payload)
+	defer utils.PutBuffer(b)
+
+	if err := binary.Read(b, binary.LittleEndian, player); err != nil {
+		r.logger.Debugf("%q", err)
 		return err
 	}
-	r.state.SyncPlayer(&player)
 	if atomic.LoadUint32(&cnt) == 25*1000 {
-		fmt.Println(time.Since(player.TimeStamp))
+		r.logger.Debugf("%s", time.Duration(time.Now().UnixNano()-player.TimeStamp))
+	}
+	return nil
+}
+
+func (r *UDPHandler) SyncPlayerCodec(cnt uint32, payload []byte) error {
+	if r.state.codec == nil {
+		return fmt.Errorf("кодек для декодирования данных не передан")
+	}
+	player := GetPlayerPool()
+	defer PutPlayerPool(player)
+	if err := r.state.codec.Decode(payload, player); err != nil {
+		return err
+	}
+	r.state.SyncPlayer(player)
+	if atomic.LoadUint32(&cnt) == 25*1000 {
+		r.logger.Debugf("%s", time.Duration(time.Now().UnixNano()-player.TimeStamp))
 	}
 	return nil
 }
 
 func (r *UDPHandler) SyncPlayerProtobuf(cnt uint32, payload []byte) error {
-	in := GetSyncPoll()
+	in := GetSyncPbPool()
 	if err := proto.Unmarshal(payload, in); err != nil {
 		return err
 	}
-	PutSyncPoll(in)
-	player := NewPlayer(in.ID, Vector{X: in.Pos.X, Y: in.Pos.Y, Z: in.Pos.Z})
-	player.TimeStamp = time.Unix(0, in.Timestamp)
+	PutSyncPbPool(in)
+	player := GetPlayerPool()
+	defer PutPlayerPool(player)
+	player = NewPlayer(in.ID, Vector{X: in.Pos.X, Y: in.Pos.Y, Z: in.Pos.Z})
+	player.TimeStamp = in.Timestamp
 	r.state.SyncPlayer(player)
 	if atomic.LoadUint32(&cnt) == 25*1000 {
-		fmt.Println(time.Since(player.TimeStamp))
+		r.logger.Debugf("%s", time.Duration(time.Now().UnixNano()-player.TimeStamp))
 	}
 	return nil
 }

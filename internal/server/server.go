@@ -10,8 +10,6 @@ import (
 	"rump/internal/srvenv"
 )
 
-type HandleFns func(...interface{}) error
-
 type UDPHandler func(uint32, []byte) error
 
 type NonStreamListener interface {

@@ -2,7 +2,6 @@ package gnet
 
 import (
 	"context"
-	"fmt"
 	"github.com/panjf2000/gnet"
 	"github.com/panjf2000/gnet/pool/goroutine"
 	"github.com/valyala/fastrand"
@@ -43,7 +42,7 @@ func (es *srv) React(in []byte, c gnet.Conn) (out []byte, action gnet.Action) {
 		f := f
 		func() {
 			if err := f(es.cnt, in); err != nil {
-				es.logger.Error(err)
+				es.logger.Errorf("server: ошибка при вызове UDP хэндлера %w", err)
 			}
 			if atomic.LoadUint32(&es.cnt) == 25*1000 {
 				atomic.StoreUint32(&es.cnt, 0)
@@ -51,7 +50,7 @@ func (es *srv) React(in []byte, c gnet.Conn) (out []byte, action gnet.Action) {
 			atomic.AddUint32(&es.cnt, 1)
 			atomic.AddUint32(&cc, 1)
 			if fastrand.Uint32n(100000) == fastrand.Uint32n(100000) {
-				fmt.Println(atomic.LoadUint32(&cc))
+				es.logger.Debugf("server: передано пакетов: %d", atomic.LoadUint32(&cc))
 			}
 		}()
 	}
@@ -64,5 +63,6 @@ func (s *Listener) Listen(ctx context.Context, fn ...server.UDPHandler) error {
 	defer s.srv.pool.Release()
 	logger := logging.FromContext(ctx)
 	s.srv.logger = logger
+	logger.Debugf("server: сервер UDP запущен на порту %s", s.env.SrvConfig.GetUDPAddr())
 	return gnet.Serve(s.srv, "udp://:5555", gnet.WithNumEventLoop(300), gnet.WithMulticore(true), gnet.WithReusePort(true))
 }

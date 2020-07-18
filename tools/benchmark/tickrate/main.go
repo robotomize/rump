@@ -3,15 +3,12 @@ package main
 import (
 	"context"
 	"flag"
-	"github.com/golang/protobuf/proto"
-	"google.golang.org/grpc"
-	"log"
+	"fmt"
 	"rump/internal/client"
 	"rump/internal/codec"
-	"rump/internal/codec/msgpack"
+	"rump/internal/codec/encbinary"
 	"rump/internal/gamestate"
 	"rump/internal/logging"
-	"rump/internal/pb"
 	"sync/atomic"
 	"time"
 )
@@ -28,18 +25,18 @@ func main() {
 	if err := c.Open(); err != nil {
 		logger.Fatal(err)
 	}
-	conn, _ := grpc.Dial("127.0.0.1:5577", grpc.WithInsecure())
-	client := pb.NewSyncStateClient(conn)
-
-	if err != nil {
-		log.Fatalf("could not get answer: %v", err)
-	}
+	cd := encbinary.New()
 	var cnt uint32
-	cd := msgpack.New()
 	for j := 0; j < 1000; j++ {
 		for cnt <= 25 {
 			for i := 0; i <= 1000; i++ {
-				emitFn(cd, client, logger, c)
+				b, err := encodeCodec(cd)
+				if err != nil {
+					logger.Fatal(err)
+				}
+				if err := send(b, c); err != nil {
+					logger.Fatal(err)
+				}
 			}
 			atomic.AddUint32(&cnt, 1)
 			time.Sleep(40 * time.Millisecond)
@@ -48,26 +45,32 @@ func main() {
 	}
 }
 
-type emitter func(logging.Logger, *client.UDPClient)
+func encodePb() ([]byte, error) {
+	return nil, nil
+}
 
-func emitFn(codec codec.Codec, client pb.SyncStateClient, logger logging.Logger, c *client.UDPClient) {
+func encodeCodec(cd codec.Codec) ([]byte, error) {
 	player := gamestate.GeneratePlayer()
-	player.TimeStamp = time.Now()
-
-	in := &pb.SyncPos{
+	player.TimeStamp = time.Now().UnixNano()
+	in := gamestate.Player{
 		ID: player.ID,
-		Pos: &pb.Vector3{
+		Pos: gamestate.Vector{
 			X: player.Pos.X,
 			Y: player.Pos.Y,
 			Z: player.Pos.Z,
 		},
-		Timestamp: time.Now().UnixNano(),
+		TimeStamp: player.TimeStamp,
 	}
-	bytes, err := proto.Marshal(in)
+	bytes, err := cd.Encode(in)
 	if err != nil {
-		logger.Fatal(err)
+		return nil, fmt.Errorf("client: ошибка декодирования данных %w", err)
 	}
+	return bytes, nil
+}
+
+func send(bytes []byte, c *client.UDPClient) error {
 	if err := c.Write(bytes); err != nil {
-		logger.Fatal("ошибка записи в сокет", err)
+		return fmt.Errorf("client: ошибка записи в сокет %w", err)
 	}
+	return nil
 }

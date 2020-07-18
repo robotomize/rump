@@ -31,10 +31,7 @@ var cc uint32
 
 func (s *Listener) Listen(ctx context.Context, fn ...server.UDPHandler) error {
 	logger := logging.FromContext(ctx)
-	errCh := make(chan error, 1)
-
 	logger.Debugf("server: сервер UDP запущен на порту %s", s.env.SrvConfig.GetUDPAddr())
-
 	rateCh := make(chan struct{}, runtime.NumCPU()*4)
 	defer close(rateCh)
 
@@ -53,11 +50,7 @@ func (s *Listener) Listen(ctx context.Context, fn ...server.UDPHandler) error {
 		for _, f := range fn {
 			func() {
 				if err := f(cnt, in); err != nil {
-					select {
-					case errCh <- err:
-						logger.Error(err)
-					default:
-					}
+					logger.Errorf("server: ошибка при вызове UDP хэндлера %w", err)
 				}
 				if atomic.LoadUint32(&cnt) == 25*1000 {
 					atomic.StoreUint32(&cnt, 0)
